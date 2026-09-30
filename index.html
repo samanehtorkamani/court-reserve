@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>رزرو زمین</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f7f9;--card:#fff;--tx:#1a1d21;--mu:#6b7280;--bd:#e3e6ea;--ac:#0f766e;--free:#ecfdf5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171a;--card:#1e2226;--tx:#eceff2;--mu:#98a1ab;--bd:#2f353b;--ac:#2dd4bf;--free:#12312d}}
+:root[data-theme="dark"]{--bg:#14171a;--card:#1e2226;--tx:#eceff2;--mu:#98a1ab;--bd:#2f353b;--ac:#2dd4bf;--free:#12312d}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:Vazirmatn,Tahoma,system-ui,sans-serif;font-size:14px;padding:10px}
+.tabs,.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px}
+button{border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;padding:8px 12px;font:inherit;white-space:nowrap}
+button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.nav{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;margin-bottom:10px}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;table-layout:fixed;min-width:320px}
+th{font-size:10px;color:var(--mu);font-weight:500;padding:3px 1px}
+td{border:1px solid var(--bd);height:28px;padding:1px;font-size:9px;text-align:center;overflow:hidden;white-space:nowrap;cursor:pointer;background:var(--free)}
+td.h{width:30px;background:none;border:none;color:var(--mu);font-size:10px;cursor:default}
+td.b{color:#fff;font-weight:600}
+.bar{height:8px;background:var(--bd);border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.row{display:flex;justify-content:space-between;align-items:center;margin:6px 0;gap:8px}
+.mu{color:var(--mu);font-size:12px}
+.sheet{position:fixed;inset:0;background:#0007;display:flex;align-items:flex-end;z-index:9}
+.sheet>div{background:var(--card);width:100%;max-height:90%;overflow:auto;border-radius:16px 16px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+select,input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit;margin:4px 0 8px}
+.pri{background:var(--ac);color:#fff;border-color:var(--ac);width:100%;margin-top:6px}
+.red{background:#b91c1c;color:#fff;border-color:#b91c1c;width:100%;margin-top:6px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px}
+.hm{display:grid;grid-template-columns:repeat(24,1fr);gap:1px;direction:ltr}
+.hm i{height:11px;background:var(--ac);border-radius:1px}
+.sub{font-weight:600;margin:10px 0 4px;font-size:12px;color:var(--mu)}
+</style>
+</head>
+<body>
+<div class="tabs" id="tabs"></div>
+<div id="main"></div>
+<div id="modal"></div>
+<script>
+const COURTS=['تنیس ۱','تنیس ۲','پدل ۱','پدل ۲'],HRS=[...Array(24).keys()];
+const PAL=['#0f766e','#c2410c','#7c3aed','#be123c','#1d4ed8','#a16207','#047857','#9333ea'];
+const TABS={day:'روزانه',week:'هفتگی',tour:'مسابقات',stats:'آمار',coach:'مربی‌ها'};
+let db,user,coaches=[],bookings={},cancels=[],tours=[],court=0,view='day',ws=startOfWeek(new Date()),dayK='',weeks=1,tf=[0];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fa=n=>Number(n).toLocaleString('fa-IR'),pad=n=>String(n).padStart(2,'0');
+const D=k=>new Date(k+'T12:00');
+function key(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function addD(k,n){const d=D(k);d.setDate(d.getDate()+n);return key(d)}
+function startOfWeek(d){d=new Date(d);d.setHours(12);d.setDate(d.getDate()-((d.getDay()+1)%7));return d}
+const wk=k=>key(startOfWeek(D(k)));
+dayK=key(new Date());
+const fd=(k,o)=>D(k).toLocaleDateString('fa-IR',o);
+const canEdit=()=>!!(user&&user.canEdit&&user.canEdit());
+const isT=w=>w.startsWith('🏆');
+function color(w){if(isT(w))return'#b45309';const i=coaches.findIndex(c=>c.name===w);return PAL[(i<0?w.length:i)%PAL.length]}
+const bk=(c,k,h)=>bookings[c+'_'+k+'_'+h];
+
+function render(){
+  $('tabs').innerHTML=Object.entries(TABS).map(([v,n])=>`<button class="${view===v?'on':''}" data-v="${v}">${n}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
+  if(!db){$('main').innerHTML='<div class="card">برای استفاده باید وارد حساب شده باشید و دسترسی داشته باشید.</div>';return}
+  $('main').innerHTML={day,week,tour,stats,coach}[view]();bind();
+}
+function courtChips(){return `<div class="chips">${COURTS.map((n,i)=>`<button class="${court===i?'on':''}" data-c="${i}">${n}</button>`).join('')}</div>`}
+function bcell(c,k,h){const b=bk(c,k,h);return b?`<td class="b" style="background:${color(b.who)}" data-c="${c}" data-k="${k}" data-h="${h}">${esc(b.who)}</td>`:`<td data-c="${c}" data-k="${k}" data-h="${h}"></td>`}
+function day(){
+  const s=wk(dayK),ds=[...Array(7)].map((_,i)=>addD(s,i));
+  let t=`<div class="card"><div class="nav"><button id="nx">‹</button><b>${fd(dayK,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</b><button id="pv">›</button></div>
+  <div class="chips">${ds.map(k=>`<button class="${k===dayK?'on':''}" data-d="${k}">${fd(k,{weekday:'short'})}<br>${fd(k,{day:'numeric'})}</button>`).join('')}<button data-d="${key(new Date())}">امروز</button></div>
+  <div class="wrap"><table><tr><th style="width:30px"></th>${COURTS.map(n=>`<th>${n}</th>`).join('')}</tr>`;
+  for(const h of HRS)t+=`<tr><td class="h">${fa(h)}</td>${COURTS.map((_,c)=>bcell(c,dayK,h)).join('')}</tr>`;
+  return t+'</table></div></div>';
+}
+function week(){
+  const ds=[...Array(7)].map((_,i)=>addD(key(ws),i));
+  let t=`<div class="card">${courtChips()}<div class="nav"><button id="nx">‹</button><b>${fd(ds[0],{day:'numeric',month:'short'})} تا ${fd(ds[6],{day:'numeric',month:'short'})}</b><button id="pv">›</button></div><div class="wrap"><table><tr><th style="width:30px"></th>${ds.map(k=>`<th>${fd(k,{weekday:'short'})}<br>${fd(k,{day:'numeric'})}</th>`).join('')}</tr>`;
+  for(const h of HRS)t+=`<tr><td class="h">${fa(h)}</td>${ds.map(k=>bcell(court,k,h)).join('')}</tr>`;
+  return t+'</table></div><div class="mu" style="margin-top:6px">سبز روشن = خالی. روی خانه بزنید.</div></div>';
+}
+function tour(){
+  const up=[...Array(60)].map((_,i)=>addD(key(new Date()),i));
+  return `<div class="card"><b>مسابقات ثبت‌شده</b>`+(tours.sort((a,b)=>a.date<b.date?-1:1).map(t=>`<div class="row"><span>🏆 ${esc(t.name)}<br><span class="mu">${fd(t.date,{weekday:'short',day:'numeric',month:'long'})} · ${fa(t.from)} تا ${fa(t.to+1)} · ${t.courts.map(c=>COURTS[c]).join('، ')}</span></span><button data-tdel="${esc(t.id)}">حذف</button></div>`).join('')||'<div class="mu">مسابقه‌ای نیست</div>')+`</div>
+  <div class="card"><b>مسابقه جدید</b> <span class="mu">(زمین‌ها رزرو می‌شوند)</span><input type="text" id="tn" placeholder="نام مسابقه">
+  <select id="td">${up.map(k=>`<option value="${k}">${fd(k,{weekday:'long',day:'numeric',month:'long'})}</option>`).join('')}</select>
+  <div class="chips">${COURTS.map((n,i)=>`<button class="${tf.includes(i)?'on':''}" data-tf="${i}">${n}</button>`).join('')}</div>
+  <div class="row"><span>از ساعت</span><select id="t1">${HRS.map(h=>`<option value="${h}" ${h===9?'selected':''}>${fa(h)}</option>`).join('')}</select><span>تا پایان ساعت</span><select id="t2">${HRS.map(h=>`<option value="${h}" ${h===17?'selected':''}>${fa(h)}</option>`).join('')}</select></div>
+  <button class="pri" id="tadd">ثبت مسابقه</button></div>`;
+}
+function stats(){
+  const s=key(ws),ds=[...Array(7*weeks)].map((_,i)=>addD(s,i)),set=new Set(ds),tot=ds.length*24;
+  const dn=['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
+  const A=COURTS.map(()=>({u:0,t:0,hm:[...Array(7)].map(()=>Array(24).fill(0)),per:{},x:0,xw:{}}));
+  for(const b of Object.values(bookings)){if(!set.has(b.date))continue;const a=A[b.court],o=ds.indexOf(b.date)%7;a.u++;a.hm[o][b.hour]++;if(isT(b.who))a.t++;else a.per[b.who]=(a.per[b.who]||0)+1}
+  for(const c of cancels)if(set.has(c.date)&&A[c.court]){A[c.court].x++;A[c.court].xw[c.who]=(A[c.court].xw[c.who]||0)+1}
+  const all=A.reduce((s,a)=>s+a.u,0),ax=A.reduce((s,a)=>s+a.x,0);
+  let out=`<div class="card"><div class="nav"><button id="nx">‹</button><b>${fd(ds[0],{day:'numeric',month:'short'})} تا ${fd(ds[ds.length-1],{day:'numeric',month:'short'})}</b><button id="pv">›</button></div>
+  <div class="chips"><button class="${weeks===1?'on':''}" data-w="1">یک هفته</button><button class="${weeks===4?'on':''}" data-w="4">۴ هفته</button><button class="${weeks===12?'on':''}" data-w="12">۱۲ هفته</button></div>
+  <div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`;
+  A.forEach((a,c)=>{
+    const byH=HRS.map(h=>a.hm.reduce((s,r)=>s+r[h],0)),byD=a.hm.map(r=>r.reduce((s,v)=>s+v,0));
+    const pk=byH.indexOf(Math.max(...byH)),lo=byH.indexOf(Math.min(...byH)),bd=byD.indexOf(Math.max(...byD)),pct=Math.round(a.u/tot*100);
+    out+=`<div class="card"><div class="row"><b>${COURTS[c]}</b><span>${fa(pct)}٪ پر</span></div><div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="row mu"><span>رزرو: ${fa(a.u-a.t)} · مسابقه: ${fa(a.t)} · خالی: ${fa(tot-a.u)} ساعت</span></div>
+    <div class="row mu"><span>شلوغ‌ترین ساعت: ${a.u?fa(pk)+':۰۰':'-'} · خلوت‌ترین: ${fa(lo)}:۰۰</span></div>
+    <div class="row mu"><span>شلوغ‌ترین روز: ${a.u?dn[bd]:'-'}</span><span>کنسلی: ${fa(a.x)}</span></div>
+    <div class="sub">نقشه شلوغی (ردیف=روز، ستون=ساعت ۰ تا ۲۳)</div>`+
+    a.hm.map(r=>`<div class="hm" style="margin-bottom:1px">${r.map(v=>`<i style="opacity:${v?0.2+0.8*v/weeks:0.06}"></i>`).join('')}</div>`).join('')+
+    `<div class="sub">ساعت هر روز هفته</div><div class="mu">${byD.map((v,i)=>`${dn[i]} ${fa(v)} (${fa(Math.round(v/(weeks*24)*100))}٪)`).join(' · ')}</div>
+    <div class="sub">به تفکیک مربی</div>`+(Object.entries(a.per).sort((x,y)=>y[1]-x[1]).map(([w,n])=>`<div class="row"><span><span class="dot" style="background:${color(w)}"></span>${esc(w)}</span><span>${fa(n)} ساعت${a.xw[w]?` · کنسل ${fa(a.xw[w])}`:''}</span></div>`).join('')||'<div class="mu">رزروی نیست</div>')+`</div>`;
+  });
+  return out;
+}
+function coach(){
+  return `<div class="card"><b>مربی‌ها</b>`+(coaches.map(c=>`<div class="row"><span><span class="dot" style="background:${color(c.name)}"></span>${esc(c.name)}</span>${canEdit()?`<button data-del="${esc(c.id)}">حذف</button>`:''}</div>`).join('')||'<div class="mu">مربی‌ای ثبت نشده</div>')+
+  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><button class="pri" id="ex">دریافت فایل داده</button><input type="file" id="im" accept=".json" style="margin-top:8px"><div class="mu" style="margin-top:10px">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
+}
+const W=(col,id,d)=>db.collection(col).doc(id).set(d);
+function bind(){
+  const nx=$('nx'),pv=$('pv'),st=view==='day'?dayK:key(ws);
+  const mv=n=>{if(view==='day')dayK=addD(dayK,n);else{ws=D(addD(key(ws),n*7))}render()};
+  if(nx)nx.onclick=()=>mv(-1);if(pv)pv.onclick=()=>mv(1);
+  document.querySelectorAll('td[data-k]').forEach(t=>t.onclick=()=>openCell(+t.dataset.c,t.dataset.k,+t.dataset.h));
+  document.querySelectorAll('[data-c]:not(td)').forEach(b=>b.onclick=()=>{court=+b.dataset.c;render()});
+  document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{dayK=b.dataset.d;render()});
+  document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{weeks=+b.dataset.w;render()});
+  document.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tf;tf=tf.includes(i)?tf.filter(x=>x!==i):[...tf,i];const v={n:$('tn').value,d:$('td').value,a:$('t1').value,b:$('t2').value};render();$('tn').value=v.n;$('td').value=v.d;$('t1').value=v.a;$('t2').value=v.b});
+  if($('ca'))$('ca').onclick=async()=>{const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
+  if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+  document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>delTour(b.dataset.tdel));
+}
+async function addTour(){
+  const name=$('tn').value.trim(),date=$('td').value,from=+$('t1').value,to=+$('t2').value;
+  if(!name||!tf.length||to<from){alert('نام، زمین و ساعت را درست وارد کنید');return}
+  const id='t'+Date.now();let skip=0;
+  try{await W('tours',id,{name,date,from,to,courts:tf});
+    for(const c of tf)for(let h=from;h<=to;h++){if(bk(c,date,h)){skip++;continue}await W('bookings',c+'_'+date+'_'+h,{court:c,date,hour:h,who:'🏆 '+name,tid:id})}
+  }catch(e){alert('خطا در ذخیره')}
+  if(skip)alert(fa(skip)+' ساعت قبلاً رزرو بود و رد شد');
+}
+async function delTour(id){
+  if(!confirm('مسابقه و رزروهایش حذف شود؟'))return;
+  try{for(const b of Object.entries(bookings))if(b[1].tid===id)await db.collection('bookings').doc(b[0]).delete();await db.collection('tours').doc(id).delete()}catch(e){alert('خطا')}
+}
+async function cancel(list){
+  try{for(const [id,b] of list){await W('cancels','x'+Date.now()+Math.random().toString(36).slice(2,6),{court:b.court,date:b.date,hour:b.hour,who:b.who,at:Date.now()});await db.collection('bookings').doc(id).delete()}}catch(e){alert('خطا')}
+}
+function close(){$('modal').innerHTML=''}
+function openCell(c,k,h){
+  const b=bk(c,k,h),id=c+'_'+k+'_'+h;
+  let m=`<div class="sheet" id="sh"><div><b>${COURTS[c]} · ${fd(k,{weekday:'long',day:'numeric',month:'long'})} · ساعت ${fa(h)}</b><br><br>`;
+  if(b){
+    m+=`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>${b.rid?'<div class="mu">رزرو هفتگی تکرارشونده</div>':''}<button class="red" id="rm">کنسل این ساعت</button>${b.rid?'<button class="red" id="rma">کنسل این و همه تکرارهای بعدی</button>':''}`;
+  }else{
+    m+=`<label>مربی / رزروکننده</label><select id="who">${coaches.map(x=>`<option>${esc(x.name)}</option>`).join('')}<option value="__g">سانس آزاد (مهمان)…</option></select>
+    <input type="text" id="gn" placeholder="نام مهمان" style="display:none"><label>مدت</label><select id="du">${[1,2,3,4,5,6,8].map(n=>`<option value="${n}">${fa(n)} ساعت</option>`).join('')}</select>
+    <label>تکرار هفتگی</label><select id="rp"><option value="1">بدون تکرار</option><option value="4">۴ هفته</option><option value="8">۸ هفته</option><option value="12">۱۲ هفته</option><option value="26">۲۶ هفته</option></select><button class="pri" id="ok">ثبت رزرو</button>`;
+  }
+  $('modal').innerHTML=m+`</div></div>`;
+  $('sh').onclick=e=>{if(e.target.id==='sh')close()};
+  if(b){
+    $('rm').onclick=async()=>{await cancel([[id,b]]);close()};
+    if(b.rid)$('rma').onclick=async()=>{await cancel(Object.entries(bookings).filter(([i,x])=>x.rid===b.rid&&x.court===c&&x.hour===h&&x.date>=k));close()};
+  }else{
+    $('who').onchange=()=>{$('gn').style.display=$('who').value==='__g'?'block':'none'};
+    $('ok').onclick=async()=>{
+      let w=$('who').value;if(w==='__g')w=$('gn').value.trim()||'مهمان';if(!w)return;
+      const n=+$('du').value,r=+$('rp').value,rid=r>1?'r'+Date.now():null;let skip=0;
+      try{for(let j=0;j<r;j++){const d=addD(k,7*j);for(let i=0;i<n&&h+i<24;i++){if(bk(c,d,h+i)){skip++;continue}const o={court:c,date:d,hour:h+i,who:w};if(rid)o.rid=rid;await W('bookings',c+'_'+d+'_'+(h+i),o)}}}catch(e){alert('خطا در ذخیره')}
+      close();if(skip)alert(fa(skip)+' ساعت قبلاً پر بود و رد شد');
+    };
+  }
+}
+// ===== تنظیمات: آدرس Firebase Realtime Database خود را اینجا بگذارید =====
+const FB='https://club-reserve-ae2d4-default-rtdb.firebaseio.com'; // مثال: https://myclub-default-rtdb.firebaseio.com
+// =======================================================================
+let store={};const subs={};
+let club=(localStorage.getItem('club')||'').trim();
+const snap=c=>({docs:Object.entries(store[c]||{}).map(([id,d])=>({id,data:()=>d}))});
+const notify=c=>(subs[c]||[]).forEach(f=>f(snap(c)));
+const url=p=>FB.replace(/\/$/,'')+'/'+club+'/'+p+'.json';
+const req=(p,m,b)=>fetch(url(p),{method:m,body:b===undefined?undefined:JSON.stringify(b)}).then(r=>{if(!r.ok)throw new Error(r.status)});
+db={collection:c=>({doc:id=>({
+  set:async d=>{(store[c]=store[c]||{})[id]=d;notify(c);await req(c+'/'+id,'PUT',d)},
+  delete:async()=>{if(store[c])delete store[c][id];notify(c);await req(c+'/'+id,'DELETE')}}),
+  onSnapshot:f=>{(subs[c]=subs[c]||[]).push(f);f(snap(c))}})};
+user={canEdit:()=>true};
+function listen(c){
+  const es=new EventSource(url(c));
+  es.addEventListener('put',e=>{const m=JSON.parse(e.data);
+    if(m.path==='/')store[c]=m.data||{};
+    else{const p=m.path.split('/').filter(Boolean);if(p.length===1){store[c]=store[c]||{};if(m.data===null)delete store[c][p[0]];else store[c][p[0]]=m.data}}
+    notify(c)});
+  es.addEventListener('patch',e=>{const m=JSON.parse(e.data);store[c]=store[c]||{};for(const k in m.data){if(m.data[k]===null)delete store[c][k];else store[c][k]=m.data[k]}notify(c)});
+}
+function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(store)],{type:'application/json'}));a.download='court-data-'+key(new Date())+'.json';a.click()}
+function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
+window.addEventListener('DOMContentLoaded',()=>{
+  if(FB.includes('PASTE_YOUR')){$('main').innerHTML='<div class="card">آدرس Firebase در ابتدای اسکریپت فایل تنظیم نشده است.</div>';return}
+  while(!club){club=(prompt('کد باشگاه را وارد کنید (همه‌ی مربی‌ها باید همین کد را بزنند):')||'').trim().replace(/[.$#\[\]\/]/g,'')}
+  localStorage.setItem('club',club);
+  const sub=(c,f)=>db.collection(c).onSnapshot(s=>{f(s.docs);render()});
+  sub('coaches',d=>coaches=d.map(x=>({id:x.id,...x.data()})));
+  sub('bookings',d=>{bookings={};d.forEach(x=>bookings[x.id]=x.data())});
+  sub('cancels',d=>cancels=d.map(x=>x.data()));
+  sub('tours',d=>tours=d.map(x=>({id:x.id,...x.data()})));
+  ['coaches','bookings','cancels','tours'].forEach(listen);
+});
+</script>
+</body>
+</html>
