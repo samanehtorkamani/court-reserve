@@ -200,6 +200,65 @@ function listen(c){
   es.addEventListener('patch',e=>{const m=JSON.parse(e.data);store[c]=store[c]||{};for(const k in m.data){if(m.data[k]===null)delete store[c][k];else store[c][k]=m.data[k]}notify(c)});
 }
 function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(store)],{type:'application/json'}));a.download='court-data-'+key(new Date())+'.json';a.click()}
+function exportExcel(){
+  const rows = Object.entries(store.bookings || {}).map(([id,b]) => ({
+    id,
+    date: b.date || '',
+    court: COURTS[b.court] || '',
+    who: b.who || '',
+    hour: Number(b.hour),
+    type: isT(b.who) ? 'مسابقه' : 'رزرو عادی'
+  })).sort((a,b) =>
+    a.date.localeCompare(b.date) ||
+    a.court.localeCompare(b.court) ||
+    a.hour-b.hour
+  );
+
+  if(!rows.length){
+    alert('رزروی برای خروجی گرفتن وجود ندارد.');
+    return;
+  }
+
+  const safe = v => {
+    let s = String(v ?? '');
+    if(/^[=+\-@]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g,'""') + '"';
+  };
+
+  const headers = [
+    'تاریخ','زمین','مربی / رزروکننده',
+    'ساعت شروع','مدت (ساعت)','نوع رزرو'
+  ];
+
+  const lines = [
+    headers,
+    ...rows.map(b => [
+      b.date,
+      b.court,
+      b.who,
+      String(b.hour).padStart(2,'0') + ':00',
+      1,
+      b.type
+    ])
+  ];
+
+  const csv = '\uFEFF' +
+    lines.map(row => row.map(safe).join(',')).join('\r\n');
+
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8;'
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Spark-Bookings-' +
+    key(new Date()) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}  
 function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
 window.addEventListener('DOMContentLoaded',()=>{
   if(FB.includes('PASTE_YOUR')){$('main').innerHTML='<div class="card">آدرس Firebase در ابتدای اسکریپت فایل تنظیم نشده است.</div>';return}
