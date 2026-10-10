@@ -117,7 +117,8 @@ function stats(){
 }
 function coach(){
   return `<div class="card"><b>مربی‌ها</b>`+(coaches.map(c=>`<div class="row"><span><span class="dot" style="background:${color(c.name)}"></span>${esc(c.name)}</span>${canEdit()?`<button data-del="${esc(c.id)}">حذف</button>`:''}</div>`).join('')||'<div class="mu">مربی‌ای ثبت نشده</div>')+
-  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><button class="pri" id="ex">دریافت فایل داده</button><input type="file" id="im" accept=".json" style="margin-top:8px"><div class="mu" style="margin-top:10px">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
+  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><button class="pri" id="excel">دریافت Excel رزروها</button>
+<button class="pri" id="ex">دریافت فایل پشتیبان JSON</button><input type="file" id="im" accept=".json" style="margin-top:8px"><div class="mu" style="margin-top:10px">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
 }
 const W=(col,id,d)=>db.collection(col).doc(id).set(d);
 function bind(){
@@ -131,7 +132,7 @@ function bind(){
   document.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tf;tf=tf.includes(i)?tf.filter(x=>x!==i):[...tf,i];const v={n:$('tn').value,d:$('td').value,a:$('t1').value,b:$('t2').value};render();$('tn').value=v.n;$('td').value=v.d;$('t1').value=v.a;$('t2').value=v.b});
   if($('ca'))$('ca').onclick=async()=>{const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
-  if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+  if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('excel'))$('excel').onclick=exportExcel;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>delTour(b.dataset.tdel));
 }
 async function addTour(){
@@ -199,6 +200,65 @@ function listen(c){
   es.addEventListener('patch',e=>{const m=JSON.parse(e.data);store[c]=store[c]||{};for(const k in m.data){if(m.data[k]===null)delete store[c][k];else store[c][k]=m.data[k]}notify(c)});
 }
 function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(store)],{type:'application/json'}));a.download='court-data-'+key(new Date())+'.json';a.click()}
+function exportExcel(){
+  const rows = Object.entries(store.bookings || {}).map(([id,b]) => ({
+    id,
+    date: b.date || '',
+    court: COURTS[b.court] || '',
+    who: b.who || '',
+    hour: Number(b.hour),
+    type: isT(b.who) ? 'مسابقه' : 'رزرو عادی'
+  })).sort((a,b) =>
+    a.date.localeCompare(b.date) ||
+    a.court.localeCompare(b.court) ||
+    a.hour-b.hour
+  );
+
+  if(!rows.length){
+    alert('رزروی برای خروجی گرفتن وجود ندارد.');
+    return;
+  }
+
+  const safe = v => {
+    let s = String(v ?? '');
+    if(/^[=+\-@]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g,'""') + '"';
+  };
+
+  const headers = [
+    'تاریخ','زمین','مربی / رزروکننده',
+    'ساعت شروع','مدت (ساعت)','نوع رزرو'
+  ];
+
+  const lines = [
+    headers,
+    ...rows.map(b => [
+      b.date,
+      b.court,
+      b.who,
+      String(b.hour).padStart(2,'0') + ':00',
+      1,
+      b.type
+    ])
+  ];
+
+  const csv = '\uFEFF' +
+    lines.map(row => row.map(safe).join(',')).join('\r\n');
+
+  const blob = new Blob([csv], {
+    type: 'text/csv;charset=utf-8;'
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Spark-Bookings-' +
+    key(new Date()) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}  
 function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
 window.addEventListener('DOMContentLoaded',()=>{
   if(FB.includes('PASTE_YOUR')){$('main').innerHTML='<div class="card">آدرس Firebase در ابتدای اسکریپت فایل تنظیم نشده است.</div>';return}
