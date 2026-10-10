@@ -201,64 +201,210 @@ function listen(c){
 }
 function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(store)],{type:'application/json'}));a.download='court-data-'+key(new Date())+'.json';a.click()}
 function exportExcel(){
-  const rows = Object.entries(store.bookings || {}).map(([id,b]) => ({
-    id,
-    date: b.date || '',
-    court: COURTS[b.court] || '',
-    who: b.who || '',
-    hour: Number(b.hour),
-    type: isT(b.who) ? 'مسابقه' : 'رزرو عادی'
-  })).sort((a,b) =>
-    a.date.localeCompare(b.date) ||
-    a.court.localeCompare(b.court) ||
-    a.hour-b.hour
-  );
+  const bookingsList = Object.values(store.bookings || {})
+    .filter(b => b.date && Number.isFinite(Number(b.hour)));
 
-  if(!rows.length){
+  if(!bookingsList.length){
     alert('رزروی برای خروجی گرفتن وجود ندارد.');
     return;
   }
 
-  const safe = v => {
-    let s = String(v ?? '');
-    if(/^[=+\-@]/.test(s)) s = "'" + s;
-    return '"' + s.replace(/"/g,'""') + '"';
+  const dateOf = k => new Date(k + 'T12:00:00');
+  const addDay = (k,n) => {
+    const d = dateOf(k);
+    d.setDate(d.getDate()+n);
+    return key(d);
   };
 
-  const headers = [
-    'تاریخ','زمین','مربی / رزروکننده',
-    'ساعت شروع','مدت (ساعت)','نوع رزرو'
+  const parts = d => {
+    const p = new Intl.DateTimeFormat(
+      'en-u-ca-persian-nu-latn',
+      {year:'numeric',month:'numeric',day:'numeric'}
+    ).formatToParts(d);
+    const o = {};
+    p.forEach(x => { if(x.type !== 'literal') o[x.type]=+x.value; });
+    return o;
+  };
+
+  const monthKey = k => {
+    const p = parts(dateOf(k));
+    return p.year + '-' + p.month;
+  };
+
+  const first = bookingsList.map(b=>b.date).sort()[0];
+  const last = bookingsList.map(b=>b.date).sort().slice(-1)[0];
+  const firstMonth = monthKey(first);
+  const lastMonth = monthKey(last);
+
+  let start = first;
+  while(monthKey(addDay(start,-1)) === firstMonth)
+    start = addDay(start,-1);
+
+  let end = last;
+  while(monthKey(addDay(end,1)) === lastMonth)
+    end = addDay(end,1);
+
+  const months = new Map();
+
+  for(let k=start; k<=end; k=addDay(k,1)){
+    const p = parts(dateOf(k));
+    const mk = p.year + '-' + p.month;
+
+    if(!months.has(mk)){
+      months.set(mk,{
+        title:new Intl.DateTimeFormat('fa-IR-u-ca-persian',{
+          month:'long',year:'numeric'
+        }).format(dateOf(k)),
+        days:[]
+      });
+    }
+
+    months.get(mk).days.push({
+      key:k,
+      day:p.day,
+      bookings:[]
+    });
+  }
+
+  const byDate = new Map();
+  for(const b of bookingsList){
+    if(!byDate.has(b.date)) byDate.set(b.date,[]);
+    byDate.get(b.date).push(b);
+  }
+
+  for(const month of months.values()){
+    for(const day of month.days){
+      const list = (byDate.get(day.key)||[]).slice()
+        .sort((a,b)=>a.court-b.court ||
+          String(a.who).localeCompare(String(b.who),'fa') ||
+          a.hour-b.hour);
+
+      const groups = new Map();
+
+      for(const b of list){
+        const g = b.court + '|' + b.who;
+        if(!groups.has(g)) groups.set(g,[]);
+        groups.get(g).push(b);
+      }
+
+      for(const items of groups.values()){
+        items.sort((a,b)=>a.hour-b.hour);
+        let startHour = null, endHour = null;
+
+        const write = (s,e,b) => {
+          const time = h => String(h).padStart(2,'0') + ':00';
+          day.bookings.push(
+            time(s) + '–' + time(e) + ' · ' +
+            (COURTS[b.court] || '') + ' · ' + b.who
+          );
+        };
+
+        for(const b of items){
+          const h = Number(b.hour);
+          if(startHour === null){
+            startHour = h;
+            endHour = h+1;
+          }else if(h === endHour){
+            endHour++;
+          }else{
+            write(startHour,endHour,items[0]);
+            startHour = h;
+            endHour = h+1;
+          }
+        }
+
+        if(startHour !== null)
+          write(startHour,endHour,items[0]);
+      }
+    }
+  }
+
+  const weekdays = [
+    'شنبه','یکشنبه','دوشنبه','سه‌شنبه',
+    'چهارشنبه','پنجشنبه','جمعه'
   ];
 
-  const lines = [
-    headers,
-    ...rows.map(b => [
-      b.date,
-      b.court,
-      b.who,
-      String(b.hour).padStart(2,'0') + ':00',
-      1,
-      b.type
-    ])
-  ];
+  const safe = s => String(s ?? '').replace(
+    /[&<>"']/g,
+    c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;',
+      '"':'&quot;',"'":'&#39;'
+    }[c])
+  );
 
-  const csv = '\uFEFF' +
-    lines.map(row => row.map(safe).join(',')).join('\r\n');
+  let html = `
+  <html><head><meta charset="utf-8">
+  <style>
+    body{font-family:Tahoma,sans-serif;direction:rtl}
+    h2{text-align:center;background:#0f766e;color:white;padding:12px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;
+          direction:rtl;margin-bottom:30px}
+    th{background:#0f766e;color:white;padding:8px;border:1px solid #aaa}
+    td{border:1px solid #aaa;vertical-align:top;padding:6px;
+       height:105px;width:14.28%;white-space:normal;
+       overflow-wrap:anywhere;font-size:10pt}
+    .daynum{font-weight:bold;font-size:12pt;margin-bottom:6px}
+    .booking{margin:4px 0;padding:3px;background:#e6f4f1;
+             border-right:3px solid #0f766e}
+    .empty{color:#aaa}
+  </style></head><body dir="rtl">
+  `;
 
-  const blob = new Blob([csv], {
-    type: 'text/csv;charset=utf-8;'
+  let monthIndex = 0;
+
+  for(const month of months.values()){
+    html += `<h2 style="${monthIndex++ ? 'page-break-before:always;' : ''}">
+      ${safe(month.title)}</h2><table><tr>`;
+
+    html += weekdays.map(w=><th>${w}</th>).join('');
+    html += '</tr>';
+
+    let row = Array(7).fill(null);
+
+    for(const day of month.days){
+      const col = (dateOf(day.key).getDay()+1)%7;
+      row[col] = day;
+
+      if(col===6){
+        html += '<tr>' + row.map(d=>cell(d)).join('') + '</tr>';
+        row = Array(7).fill(null);
+      }
+    }
+
+    if(row.some(Boolean))
+      html += '<tr>' + row.map(d=>cell(d)).join('') + '</tr>';
+
+    html += '</table>';
+  }
+
+  function cell(d){
+    if(!d) return '<td></td>';
+
+    const content = d.bookings.length
+      ? d.bookings.map(x=>
+          <div class="booking">${safe(x)}</div>
+        ).join('')
+      : '<span class="empty">—</span>';
+
+    return <td><div class="daynum">${d.day}</div>${content}</td>;
+  }
+
+  html += '</body></html>';
+
+  const blob = new Blob(['\uFEFF',html],{
+    type:'application/vnd.ms-excel;charset=utf-8'
   });
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'Spark-Bookings-' +
-    key(new Date()) + '.csv';
+  a.download = 'Spark-Monthly-Calendar-' +
+    key(new Date()) + '.xls';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}  
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
 function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
 window.addEventListener('DOMContentLoaded',()=>{
   if(FB.includes('PASTE_YOUR')){$('main').innerHTML='<div class="card">آدرس Firebase در ابتدای اسکریپت فایل تنظیم نشده است.</div>';return}
