@@ -117,9 +117,11 @@ function stats(){
 }
 function coach(){
   return `<div class="card"><b>مربی‌ها</b>`+(coaches.map(c=>`<div class="row"><span><span class="dot" style="background:${color(c.name)}"></span>${esc(c.name)}</span>${canEdit()?`<button data-del="${esc(c.id)}">حذف</button>`:''}</div>`).join('')||'<div class="mu">مربی‌ای ثبت نشده</div>')+
-  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><div class="nav"><button id="nx">‹</button><b>هفته ${fd(key(ws),{day:'numeric',month:'long'})} تا ${fd(addD(key(ws),6),{day:'numeric',month:'long'})}</b><button id="pv">›</button></div><button class="pri" id="excel">دریافت Excel همین هفته (جدول هر زمین)</button>
+  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><div class="mu" style="margin-top:8px">خروجی Excel برای بازه‌ی تاریخ:</div><label>از تاریخ</label><select id="xf">${xOpts(xf||key(ws))}</select><label>تا تاریخ</label><select id="xt">${xOpts(xt||addD(key(ws),6))}</select><button class="pri" id="excel">دریافت Excel این بازه (جدول هفتگی هر زمین)</button>
 <button class="pri" id="ex">دریافت فایل پشتیبان JSON</button><input type="file" id="im" accept=".json" style="margin-top:8px"><div class="mu" style="margin-top:10px">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
 }
+let xf='',xt='';
+function xOpts(sel){const t=key(new Date());let o='';for(let i=-180;i<=365;i++){const k=addD(t,i);o+='<option value="'+k+'"'+(k===sel?' selected':'')+'>'+fd(k,{weekday:'short',day:'numeric',month:'long',year:'numeric'})+'</option>'}return o}
 const W=(col,id,d)=>db.collection(col).doc(id).set(d);
 function bind(){
   const nx=$('nx'),pv=$('pv'),st=view==='day'?dayK:key(ws);
@@ -132,7 +134,7 @@ function bind(){
   document.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tf;tf=tf.includes(i)?tf.filter(x=>x!==i):[...tf,i];const v={n:$('tn').value,d:$('td').value,a:$('t1').value,b:$('t2').value};render();$('tn').value=v.n;$('td').value=v.d;$('t1').value=v.a;$('t2').value=v.b});
   if($('ca'))$('ca').onclick=async()=>{const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
-  if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('excel'))$('excel').onclick=exportExcel;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
+  if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('excel'))$('excel').onclick=exportExcel;if($('xf'))$('xf').onchange=e=>{xf=e.target.value;if(!xt||xt<xf){xt=xf;$('xt').value=xt}};if($('xt'))$('xt').onchange=e=>xt=e.target.value;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>delTour(b.dataset.tdel));
 }
 async function addTour(){
@@ -266,33 +268,47 @@ function buildXlsx(fn){
   return xlsxZip(files);
 }
 function exportExcel(){
-  const ds=[...Array(7)].map((_,i)=>addD(key(ws),i)),set=new Set(ds);
+  const from=xf||key(ws),to=xt||addD(key(ws),6);
+  if(to<from){alert('تاریخ پایان باید بعد از تاریخ شروع باشد');return}
+  const total=Math.round((D(to)-D(from))/864e5)+1;
+  if(total>120){alert('بازه حداکثر ۱۲۰ روز می‌تواند باشد');return}
+  const set=new Set([...Array(total)].map((_,i)=>addD(from,i)));
+  const w0=key(startOfWeek(D(from))),weeks=[];
+  for(let k=w0;k<=to;k=addD(k,7))weeks.push([...Array(7)].map((_,i)=>addD(k,i)));
   const dl=k=>fd(k,{weekday:'long',day:'numeric',month:'long'});
-  const rng=fd(ds[0],{day:'numeric',month:'long',year:'numeric'})+' تا '+fd(ds[6],{day:'numeric',month:'long',year:'numeric'});
+  const fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
+  const rng=fl(from)+' تا '+fl(to);
   const hl=h=>pad(h)+':00 - '+pad((h+1)%24)+':00';
+  const L=i=>String.fromCharCode(65+i);
   const sheetsFn=xfOf=>{
     const out=[];
     COURTS.forEach((cn,c)=>{
-      const rows=[],merges=[],N=ds.length+1;
-      const title=[{v:cn+' — هفته '+rng,s:4}];for(let i=1;i<N;i++)title.push({s:4});rows.push(title);merges.push('A1:'+String.fromCharCode(64+N)+'1');
-      rows.push([{v:'ساعت',s:1},...ds.map(k=>({v:dl(k),s:1}))]);
-      const grid=HRS.map(h=>[{v:hl(h),s:2},...ds.map(()=>({s:3}))]);
-      ds.forEach((k,di)=>{
-        let h=0;
-        while(h<24){
-          const b=bk(c,k,h);
-          if(!b){h++;continue}
-          let e=h;while(e+1<24&&bk(c,k,e+1)&&bk(c,k,e+1).who===b.who)e++;
-          const st=xfOf(color(b.who));
-          for(let q=h;q<=e;q++)grid[q][di+1]={s:st,v:q===h?b.who:''};
-          if(e>h)merges.push(String.fromCharCode(66+di)+(h+3)+':'+String.fromCharCode(66+di)+(e+3));
-          h=e+1;
-        }
+      const rows=[],merges=[],heights={};
+      weeks.forEach((ds,wi)=>{
+        const r0=rows.length;
+        const title=[{v:cn+' — '+fl(ds[0])+' تا '+fl(ds[6]),s:4}];for(let i=1;i<8;i++)title.push({s:4});
+        rows.push(title);merges.push('A'+(r0+1)+':H'+(r0+1));heights[r0]=30;
+        rows.push([{v:'ساعت',s:1},...ds.map(k=>({v:dl(k),s:1}))]);heights[r0+1]=26;
+        const gray=xfOf('#d1d5db');
+        const grid=HRS.map(h=>[{v:hl(h),s:2},...ds.map(k=>({s:set.has(k)?3:gray}))]);
+        ds.forEach((k,di)=>{
+          if(!set.has(k))return;
+          let h=0;
+          while(h<24){
+            const b=bk(c,k,h);
+            if(!b){h++;continue}
+            let e=h;while(e+1<24&&bk(c,k,e+1)&&bk(c,k,e+1).who===b.who)e++;
+            const st=xfOf(color(b.who));
+            for(let q=h;q<=e;q++)grid[q][di+1]={s:st,v:q===h?b.who:''};
+            if(e>h)merges.push(L(di+1)+(r0+3+h)+':'+L(di+1)+(r0+3+e));
+            h=e+1;
+          }
+        });
+        grid.forEach(r=>rows.push(r));
+        if(wi<weeks.length-1)rows.push([]);
       });
-      grid.forEach(r=>rows.push(r));
-      out.push({name:cn,rows,merges,widths:[16,...ds.map(()=>18)],heights:{0:30,1:26},freeze:[1,2]});
+      out.push({name:cn,rows,merges,widths:[16,...[...Array(7)].map(()=>18)],heights});
     });
-    // لیست رزروها (ساعت‌های پشت‌سرهم یک ردیف)
     const items=[];
     for(const b of Object.values(bookings)){if(set.has(b.date))items.push(b)}
     items.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.court-b.court||a.hour-b.hour);
@@ -302,19 +318,18 @@ function exportExcel(){
       if(p&&p.date===b.date&&p.court===b.court&&p.who===b.who&&p.end+1===b.hour)p.end=b.hour;
       else list.push({date:b.date,court:b.court,who:b.who,start:b.hour,end:b.hour});
     }
-    const lr=[[ 'تاریخ','روز هفته','زمین','مربی / رزروکننده','از ساعت','تا ساعت','مدت (ساعت)','نوع' ].map(v=>({v,s:1}))];
-    list.forEach(r=>lr.push([fd(r.date,{day:'numeric',month:'long',year:'numeric'}),fd(r.date,{weekday:'long'}),COURTS[r.court],r.who,pad(r.start)+':00',pad((r.end+1)%24)+':00',r.end-r.start+1,isT(r.who)?'مسابقه':'رزرو عادی'].map(v=>({v,s:5}))));
+    const lr=[['تاریخ','روز هفته','زمین','مربی / رزروکننده','از ساعت','تا ساعت','مدت (ساعت)','نوع'].map(v=>({v,s:1}))];
+    list.forEach(r=>lr.push([fl(r.date),fd(r.date,{weekday:'long'}),COURTS[r.court],r.who,pad(r.start)+':00',pad((r.end+1)%24)+':00',r.end-r.start+1,isT(r.who)?'مسابقه':'رزرو عادی'].map(v=>({v,s:5}))));
     out.push({name:'لیست رزروها',rows:lr,merges:[],widths:[20,12,12,26,10,10,12,12],freeze:[0,1]});
-    // کنسلی‌ها
     const cx=cancels.filter(x=>set.has(x.date)).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.court-b.court||a.hour-b.hour);
     const cr=[['تاریخ','روز هفته','زمین','مربی / رزروکننده','ساعت'].map(v=>({v,s:1}))];
-    cx.forEach(x=>cr.push([fd(x.date,{day:'numeric',month:'long',year:'numeric'}),fd(x.date,{weekday:'long'}),COURTS[x.court],x.who,hl(x.hour)].map(v=>({v,s:5}))));
+    cx.forEach(x=>cr.push([fl(x.date),fd(x.date,{weekday:'long'}),COURTS[x.court],x.who,hl(x.hour)].map(v=>({v,s:5}))));
     out.push({name:'کنسلی‌ها',rows:cr,merges:[],widths:[20,12,12,26,16],freeze:[0,1]});
     return out;
   };
   const real=buildXlsx(sheetsFn);
   const a=document.createElement('a');a.href=URL.createObjectURL(real);
-  a.download='court-week-'+key(ws)+'.xlsx';document.body.appendChild(a);a.click();a.remove();
+  a.download='court-'+from+'_to_'+to+'.xlsx';document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
 function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
