@@ -91,26 +91,38 @@ function tour(){
   <div class="row"><span>از ساعت</span><select id="t1">${HRS.map(h=>`<option value="${h}" ${h===9?'selected':''}>${fa(h)}</option>`).join('')}</select><span>تا پایان ساعت</span><select id="t2">${HRS.map(h=>`<option value="${h}" ${h===17?'selected':''}>${fa(h)}</option>`).join('')}</select></div>
   <button class="pri" id="tadd">ثبت مسابقه</button></div>`;
 }
+let sf='',st='';
+function sOpts(sel){const t=key(new Date());let o='';for(let i=-730;i<=365;i++){const k=addD(t,i);o+='<option value="'+k+'"'+(k===sel?' selected':'')+'>'+fd(k,{weekday:'short',day:'numeric',month:'long',year:'numeric'})+'</option>'}return o}
 function stats(){
-  const s=key(ws),ds=[...Array(7*weeks)].map((_,i)=>addD(s,i)),set=new Set(ds),tot=ds.length*24;
+  if(!sf||!st){sf=key(ws);st=addD(key(ws),6)}
+  if(st<sf)st=sf;
+  const nd=Math.round((D(st)-D(sf))/864e5)+1;
+  const ok=nd<=730;
+  const ds=ok?[...Array(nd)].map((_,i)=>addD(sf,i)):[],set=new Set(ds),tot=nd*24;
   const dn=['شنبه','یکشنبه','دوشنبه','سه‌شنبه','چهارشنبه','پنجشنبه','جمعه'];
+  const wd=k=>(D(k).getDay()+1)%7,cnt=Array(7).fill(0);ds.forEach(k=>cnt[wd(k)]++);
   const A=COURTS.map(()=>({u:0,t:0,hm:[...Array(7)].map(()=>Array(24).fill(0)),per:{},x:0,xw:{}}));
-  for(const b of Object.values(bookings)){if(!set.has(b.date))continue;const a=A[b.court],o=ds.indexOf(b.date)%7;a.u++;a.hm[o][b.hour]++;if(isT(b.who))a.t++;else a.per[b.who]=(a.per[b.who]||0)+1}
+  for(const b of Object.values(bookings)){if(!set.has(b.date))continue;const a=A[b.court];if(!a)continue;a.u++;a.hm[wd(b.date)][b.hour]++;if(isT(b.who))a.t++;else a.per[b.who]=(a.per[b.who]||0)+1}
   for(const c of cancels)if(set.has(c.date)&&A[c.court]){A[c.court].x++;A[c.court].xw[c.who]=(A[c.court].xw[c.who]||0)+1}
   const all=A.reduce((s,a)=>s+a.u,0),ax=A.reduce((s,a)=>s+a.x,0);
-  let out=`<div class="card"><div class="nav"><button id="nx">‹</button><b>${fd(ds[0],{day:'numeric',month:'short'})} تا ${fd(ds[ds.length-1],{day:'numeric',month:'short'})}</b><button id="pv">›</button></div>
-  <div class="chips"><button class="${weeks===1?'on':''}" data-w="1">یک هفته</button><button class="${weeks===4?'on':''}" data-w="4">۴ هفته</button><button class="${weeks===12?'on':''}" data-w="12">۱۲ هفته</button></div>
-  <div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`;
+  const fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
+  const ps=[['این هفته',key(ws),addD(key(ws),6)],['۴ هفته اخیر',addD(key(ws),-21),addD(key(ws),6)],['۱۲ هفته اخیر',addD(key(ws),-77),addD(key(ws),6)]];
+  let out=`<div class="card"><b>بازه‌ی آمار</b><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
+  <div class="chips">${ps.map((p,i)=>`<button data-sp="${i}">${p[0]}</button>`).join('')}</div>
+  <div class="mu" style="margin-top:4px">${fl(sf)} تا ${fl(st)} · ${fa(nd)} روز</div>`+
+  (ok?`<div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`:`<div class="mu" style="color:#b91c1c">بازه حداکثر ۷۳۰ روز می‌تواند باشد.</div></div>`);
+  if(!ok)return out;
   A.forEach((a,c)=>{
     const byH=HRS.map(h=>a.hm.reduce((s,r)=>s+r[h],0)),byD=a.hm.map(r=>r.reduce((s,v)=>s+v,0));
+    const mx=Math.max(1,...a.hm.map(r=>Math.max(...r)));
     const pk=byH.indexOf(Math.max(...byH)),lo=byH.indexOf(Math.min(...byH)),bd=byD.indexOf(Math.max(...byD)),pct=Math.round(a.u/tot*100);
     out+=`<div class="card"><div class="row"><b>${COURTS[c]}</b><span>${fa(pct)}٪ پر</span></div><div class="bar"><i style="width:${pct}%"></i></div>
     <div class="row mu"><span>رزرو: ${fa(a.u-a.t)} · مسابقه: ${fa(a.t)} · خالی: ${fa(tot-a.u)} ساعت</span></div>
     <div class="row mu"><span>شلوغ‌ترین ساعت: ${a.u?fa(pk)+':۰۰':'-'} · خلوت‌ترین: ${fa(lo)}:۰۰</span></div>
     <div class="row mu"><span>شلوغ‌ترین روز: ${a.u?dn[bd]:'-'}</span><span>کنسلی: ${fa(a.x)}</span></div>
     <div class="sub">نقشه شلوغی (ردیف=روز، ستون=ساعت ۰ تا ۲۳)</div>`+
-    a.hm.map(r=>`<div class="hm" style="margin-bottom:1px">${r.map(v=>`<i style="opacity:${v?0.2+0.8*v/weeks:0.06}"></i>`).join('')}</div>`).join('')+
-    `<div class="sub">ساعت هر روز هفته</div><div class="mu">${byD.map((v,i)=>`${dn[i]} ${fa(v)} (${fa(Math.round(v/(weeks*24)*100))}٪)`).join(' · ')}</div>
+    a.hm.map(r=>`<div class="hm" style="margin-bottom:1px">${r.map(v=>`<i style="opacity:${v?0.2+0.8*v/mx:0.06}"></i>`).join('')}</div>`).join('')+
+    `<div class="sub">ساعت هر روز هفته</div><div class="mu">${byD.map((v,i)=>cnt[i]?`${dn[i]} ${fa(v)} (${fa(Math.round(v/(cnt[i]*24)*100))}٪)`:`${dn[i]} -`).join(' · ')}</div>
     <div class="sub">به تفکیک مربی</div>`+(Object.entries(a.per).sort((x,y)=>y[1]-x[1]).map(([w,n])=>`<div class="row"><span><span class="dot" style="background:${color(w)}"></span>${esc(w)}</span><span>${fa(n)} ساعت${a.xw[w]?` · کنسل ${fa(a.xw[w])}`:''}</span></div>`).join('')||'<div class="mu">رزروی نیست</div>')+`</div>`;
   });
   return out;
@@ -130,7 +142,8 @@ function bind(){
   document.querySelectorAll('td[data-k]').forEach(t=>t.onclick=()=>openCell(+t.dataset.c,t.dataset.k,+t.dataset.h));
   document.querySelectorAll('[data-c]:not(td)').forEach(b=>b.onclick=()=>{court=+b.dataset.c;render()});
   document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{dayK=b.dataset.d;render()});
-  document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{weeks=+b.dataset.w;render()});
+  if($('sf'))$('sf').onchange=e=>{sf=e.target.value;if(st<sf)st=sf;render()};if($('st'))$('st').onchange=e=>{st=e.target.value;if(st<sf)sf=st;render()};
+  document.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{const k=key(ws),P=[[k,addD(k,6)],[addD(k,-21),addD(k,6)],[addD(k,-77),addD(k,6)]][+b.dataset.sp];sf=P[0];st=P[1];render()});
   document.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tf;tf=tf.includes(i)?tf.filter(x=>x!==i):[...tf,i];const v={n:$('tn').value,d:$('td').value,a:$('t1').value,b:$('t2').value};render();$('tn').value=v.n;$('td').value=v.d;$('t1').value=v.a;$('t2').value=v.b});
   if($('ca'))$('ca').onclick=async()=>{const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
