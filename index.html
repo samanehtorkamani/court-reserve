@@ -136,7 +136,7 @@ let xf='',xt='';
 function xOpts(sel){const t=key(new Date());let o='';for(let i=-180;i<=365;i++){const k=addD(t,i);o+='<option value="'+k+'"'+(k===sel?' selected':'')+'>'+fd(k,{weekday:'short',day:'numeric',month:'long',year:'numeric'})+'</option>'}return o}
 const W=(col,id,d)=>db.collection(col).doc(id).set(d);
 function bind(){
-  const nx=$('nx'),pv=$('pv'),st=view==='day'?dayK:key(ws);
+  const nx=$('nx'),pv=$('pv');
   const mv=n=>{if(view==='day')dayK=addD(dayK,n);else{ws=D(addD(key(ws),n*7))}render()};
   if(nx)nx.onclick=()=>mv(-1);if(pv)pv.onclick=()=>mv(1);
   document.querySelectorAll('td[data-k]').forEach(t=>t.onclick=()=>openCell(+t.dataset.c,t.dataset.k,+t.dataset.h));
