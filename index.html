@@ -107,7 +107,7 @@ function stats(){
   const all=A.reduce((s,a)=>s+a.u,0),ax=A.reduce((s,a)=>s+a.x,0);
   const fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
   const ps=[['این هفته',key(ws),addD(key(ws),6)],['۴ هفته اخیر',addD(key(ws),-21),addD(key(ws),6)],['۱۲ هفته اخیر',addD(key(ws),-77),addD(key(ws),6)]];
-  let out=`<div class="card"><b>بازه‌ی آمار</b><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
+  let out=`<div class="card"><b>بازه‌ی آمار</b> <span class="mu">(نسخه ۴)</span><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
   <div class="chips">${ps.map((p,i)=>`<button data-sp="${i}">${p[0]}</button>`).join('')}</div>
   <div class="mu" style="margin-top:4px">${fl(sf)} تا ${fl(st)} · ${fa(nd)} روز</div>`+
   (ok?`<div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`:`<div class="mu" style="color:#b91c1c">بازه حداکثر ۷۳۰ روز می‌تواند باشد.</div></div>`);
