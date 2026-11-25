@@ -107,7 +107,7 @@ function stats(){
   const all=A.reduce((s,a)=>s+a.u,0),ax=A.reduce((s,a)=>s+a.x,0);
   const fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
   const ps=[['این هفته',key(ws),addD(key(ws),6)],['۴ هفته اخیر',addD(key(ws),-21),addD(key(ws),6)],['۱۲ هفته اخیر',addD(key(ws),-77),addD(key(ws),6)]];
-  let out=`<div class="card"><b>بازه‌ی آمار</b> <span class="mu">(نسخه ۴)</span><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
+  let out=`<div class="card"><b>بازه‌ی آمار</b> <span class="mu">(نسخه ۶)</span><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
   <div class="chips">${ps.map((p,i)=>`<button data-sp="${i}">${p[0]}</button>`).join('')}</div>
   <div class="mu" style="margin-top:4px">${fl(sf)} تا ${fl(st)} · ${fa(nd)} روز</div>`+
   (ok?`<div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`:`<div class="mu" style="color:#b91c1c">بازه حداکثر ۷۳۰ روز می‌تواند باشد.</div></div>`);
@@ -163,6 +163,15 @@ async function delTour(id){
   if(!confirm('مسابقه و رزروهایش حذف شود؟'))return;
   try{for(const b of Object.entries(bookings))if(b[1].tid===id)await db.collection('bookings').doc(b[0]).delete();await db.collection('tours').doc(id).delete()}catch(e){alert('خطا')}
 }
+const MIN_CANCEL_HOURS=12;           // حداقل فاصله تا شروع سانس برای کنسل
+const MANAGER_CODE='5470';               // اختیاری: اگر کدی بگذارید، مدیر با این کد می‌تواند دیرتر هم کنسل کند
+const startMs=b=>new Date(b.date+'T'+pad(b.hour)+':00:00').getTime();
+const isLocked=b=>startMs(b)-Date.now()<MIN_CANCEL_HOURS*36e5;
+function mayCancel(b){
+  if(!isLocked(b))return true;
+  if(MANAGER_CODE&&prompt('کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت به شروع این سانس مانده. کد مدیر را وارد کنید:')===MANAGER_CODE)return true;
+  return false;
+}
 async function cancel(list){
   try{for(const [id,b] of list){await W('cancels','x'+Date.now()+Math.random().toString(36).slice(2,6),{court:b.court,date:b.date,hour:b.hour,who:b.who,at:Date.now()});await db.collection('bookings').doc(id).delete()}}catch(e){alert('خطا')}
 }
@@ -171,7 +180,7 @@ function openCell(c,k,h){
   const b=bk(c,k,h),id=c+'_'+k+'_'+h;
   let m=`<div class="sheet" id="sh"><div><b>${COURTS[c]} · ${fd(k,{weekday:'long',day:'numeric',month:'long'})} · ساعت ${fa(h)}</b><br><br>`;
   if(b){
-    m+=`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>${b.rid?'<div class="mu">رزرو هفتگی تکرارشونده</div>':''}<button class="red" id="rm">کنسل این ساعت</button>${b.rid?'<button class="red" id="rma">کنسل این و همه تکرارهای بعدی</button>':''}`;
+    m+=`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>${b.rid?'<div class="mu">رزرو هفتگی تکرارشونده</div>':''}${isLocked(b)?`<div class="mu" style="color:#b91c1c;margin:6px 0">کمتر از ${fa(MIN_CANCEL_HOURS)} ساعت به شروع این سانس مانده و کنسل آزاد نیست.</div>`:''}<button class="red" id="rm">کنسل این ساعت</button>${b.rid?'<button class="red" id="rma">کنسل این و همه تکرارهای بعدی</button>':''}`;
   }else{
     m+=`<label>مربی / رزروکننده</label><select id="who">${coaches.map(x=>`<option>${esc(x.name)}</option>`).join('')}<option value="__g">سانس آزاد (مهمان)…</option></select>
     <input type="text" id="gn" placeholder="نام مهمان" style="display:none"><label>مدت</label><select id="du">${[1,2,3,4,5,6,8].map(n=>`<option value="${n}">${fa(n)} ساعت</option>`).join('')}</select>
@@ -180,8 +189,14 @@ function openCell(c,k,h){
   $('modal').innerHTML=m+`</div></div>`;
   $('sh').onclick=e=>{if(e.target.id==='sh')close()};
   if(b){
-    $('rm').onclick=async()=>{await cancel([[id,b]]);close()};
-    if(b.rid)$('rma').onclick=async()=>{await cancel(Object.entries(bookings).filter(([i,x])=>x.rid===b.rid&&x.court===c&&x.hour===h&&x.date>=k));close()};
+    $('rm').onclick=async()=>{if(!mayCancel(b)){alert('کنسل کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت مانده به شروع سانس ممکن نیست.');return}await cancel([[id,b]]);close()};
+    if(b.rid)$('rma').onclick=async()=>{
+      const all=Object.entries(bookings).filter(([i,x])=>x.rid===b.rid&&x.court===c&&x.hour===h&&x.date>=k);
+      const ok=all.filter(([i,x])=>!isLocked(x)),late=all.length-ok.length;
+      let list=ok;
+      if(late){if(MANAGER_CODE&&prompt('بعضی از این رزروها کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت مانده‌اند. برای کنسل همه کد مدیر را وارد کنید (لغو = فقط بقیه):')===MANAGER_CODE)list=all;else alert(fa(late)+' رزرو که کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت به شروعشان مانده کنسل نشد.')}
+      if(list.length)await cancel(list);close();
+    };
   }else{
     $('who').onchange=()=>{$('gn').style.display=$('who').value==='__g'?'block':'none'};
     $('ok').onclick=async()=>{
