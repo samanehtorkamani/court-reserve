@@ -43,7 +43,7 @@ select,input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px so
 <script>
 const COURTS=['تنیس ۱','تنیس ۲','پدل ۱','پدل ۲'],HRS=[...Array(24).keys()];
 const PAL=['#0f766e','#c2410c','#7c3aed','#be123c','#1d4ed8','#a16207','#047857','#9333ea'];
-const TABS={day:'روزانه',week:'هفتگی',tour:'مسابقات',stats:'آمار',coach:'مربی‌ها'};
+const TABS={day:'روزانه',week:'هفتگی',tour:'مسابقات',stats:'آمار',pay:'پرداخت',coach:'مربی‌ها'};
 let db,user,coaches=[],bookings={},cancels=[],tours=[],court=0,view='day',ws=startOfWeek(new Date()),dayK='',weeks=1,tf=[0];
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -55,19 +55,21 @@ function startOfWeek(d){d=new Date(d);d.setHours(12);d.setDate(d.getDate()-((d.g
 const wk=k=>key(startOfWeek(D(k)));
 dayK=key(new Date());
 const fd=(k,o)=>D(k).toLocaleDateString('fa-IR',o);
-const canEdit=()=>!!(user&&user.canEdit&&user.canEdit());
+const canEdit=()=>editor;
 const isT=w=>w.startsWith('🏆');
 function color(w){if(isT(w))return'#b45309';const i=coaches.findIndex(c=>c.name===w);return PAL[(i<0?w.length:i)%PAL.length]}
 const bk=(c,k,h)=>bookings[c+'_'+k+'_'+h];
 
 function render(){
-  $('tabs').innerHTML=Object.entries(TABS).map(([v,n])=>`<button class="${view===v?'on':''}" data-v="${v}">${n}</button>`).join('');
-  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
+  if(view==='pay'&&!editor)view='day';
+  $('tabs').innerHTML=Object.entries(TABS).filter(([v])=>v!=='pay'||editor).map(([v,n])=>`<button class="${view===v?'on':''}" data-v="${v}">${n}</button>`).join('')+`<button id="lock" style="margin-inline-start:auto">${editor?'🔓 مسئول (خروج)':'🔒 ورود مسئول'}</button>`;
+  $('tabs').querySelectorAll('button[data-v]').forEach(b=>b.onclick=()=>{view=b.dataset.v;render()});
+  $('lock').onclick=()=>{if(editor){if(confirm('از حالت مسئول خارج می‌شوید؟'))logout()}else login()};
   if(!db){$('main').innerHTML='<div class="card">برای استفاده باید وارد حساب شده باشید و دسترسی داشته باشید.</div>';return}
-  $('main').innerHTML={day,week,tour,stats,coach}[view]();bind();
+  $('main').innerHTML={day,week,tour,stats,pay,coach}[view]();bind();
 }
 function courtChips(){return `<div class="chips">${COURTS.map((n,i)=>`<button class="${court===i?'on':''}" data-c="${i}">${n}</button>`).join('')}</div>`}
-function bcell(c,k,h){const b=bk(c,k,h);return b?`<td class="b" style="background:${color(b.who)}" data-c="${c}" data-k="${k}" data-h="${h}">${esc(b.who)}</td>`:`<td data-c="${c}" data-k="${k}" data-h="${h}"></td>`}
+function bcell(c,k,h){const b=bk(c,k,h);return b?`<td class="b" style="background:${color(b.who)}" data-c="${c}" data-k="${k}" data-h="${h}">${b.paid&&editor?'✓ ':''}${esc(b.who)}</td>`:`<td data-c="${c}" data-k="${k}" data-h="${h}"></td>`}
 function day(){
   const s=wk(dayK),ds=[...Array(7)].map((_,i)=>addD(s,i));
   let t=`<div class="card"><div class="nav"><button id="nx">‹</button><b>${fd(dayK,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</b><button id="pv">›</button></div>
@@ -84,12 +86,12 @@ function week(){
 }
 function tour(){
   const up=[...Array(60)].map((_,i)=>addD(key(new Date()),i));
-  return `<div class="card"><b>مسابقات ثبت‌شده</b>`+(tours.sort((a,b)=>a.date<b.date?-1:1).map(t=>`<div class="row"><span>🏆 ${esc(t.name)}<br><span class="mu">${fd(t.date,{weekday:'short',day:'numeric',month:'long'})} · ${fa(t.from)} تا ${fa(t.to+1)} · ${t.courts.map(c=>COURTS[c]).join('، ')}</span></span><button data-tdel="${esc(t.id)}">حذف</button></div>`).join('')||'<div class="mu">مسابقه‌ای نیست</div>')+`</div>
+  return `<div class="card"><b>مسابقات ثبت‌شده</b>`+(tours.sort((a,b)=>a.date<b.date?-1:1).map(t=>`<div class="row"><span>🏆 ${esc(t.name)}<br><span class="mu">${fd(t.date,{weekday:'short',day:'numeric',month:'long'})} · ${fa(t.from)} تا ${fa(t.to+1)} · ${t.courts.map(c=>COURTS[c]).join('، ')}</span></span>${editor?`<button data-tdel="${esc(t.id)}">حذف</button>`:''}</div>`).join('')||'<div class="mu">مسابقه‌ای نیست</div>')+`</div>`+(editor?`
   <div class="card"><b>مسابقه جدید</b> <span class="mu">(زمین‌ها رزرو می‌شوند)</span><input type="text" id="tn" placeholder="نام مسابقه">
   <select id="td">${up.map(k=>`<option value="${k}">${fd(k,{weekday:'long',day:'numeric',month:'long'})}</option>`).join('')}</select>
   <div class="chips">${COURTS.map((n,i)=>`<button class="${tf.includes(i)?'on':''}" data-tf="${i}">${n}</button>`).join('')}</div>
   <div class="row"><span>از ساعت</span><select id="t1">${HRS.map(h=>`<option value="${h}" ${h===9?'selected':''}>${fa(h)}</option>`).join('')}</select><span>تا پایان ساعت</span><select id="t2">${HRS.map(h=>`<option value="${h}" ${h===17?'selected':''}>${fa(h)}</option>`).join('')}</select></div>
-  <button class="pri" id="tadd">ثبت مسابقه</button></div>`;
+  <button class="pri" id="tadd">ثبت مسابقه</button></div>`:'');
 }
 let sf='',st='';
 function sOpts(sel){const t=key(new Date());let o='';for(let i=-730;i<=365;i++){const k=addD(t,i);o+='<option value="'+k+'"'+(k===sel?' selected':'')+'>'+fd(k,{weekday:'short',day:'numeric',month:'long',year:'numeric'})+'</option>'}return o}
@@ -107,7 +109,7 @@ function stats(){
   const all=A.reduce((s,a)=>s+a.u,0),ax=A.reduce((s,a)=>s+a.x,0);
   const fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
   const ps=[['این هفته',key(ws),addD(key(ws),6)],['۴ هفته اخیر',addD(key(ws),-21),addD(key(ws),6)],['۱۲ هفته اخیر',addD(key(ws),-77),addD(key(ws),6)]];
-  let out=`<div class="card"><b>بازه‌ی آمار</b> <span class="mu">(نسخه ۶)</span><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
+  let out=`<div class="card"><b>بازه‌ی آمار</b> <span class="mu">(نسخه ۸)</span><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="sf">${sOpts(sf)}</select><label class="mu">تا تاریخ</label><select id="st">${sOpts(st)}</select>
   <div class="chips">${ps.map((p,i)=>`<button data-sp="${i}">${p[0]}</button>`).join('')}</div>
   <div class="mu" style="margin-top:4px">${fl(sf)} تا ${fl(st)} · ${fa(nd)} روز</div>`+
   (ok?`<div class="row"><span>کل ساعت رزرو</span><b>${fa(all)} از ${fa(tot*4)} (${fa(Math.round(all/tot/4*100))}٪)</b></div><div class="row"><span>کنسلی‌ها</span><b>${fa(ax)}</b></div></div>`:`<div class="mu" style="color:#b91c1c">بازه حداکثر ۷۳۰ روز می‌تواند باشد.</div></div>`);
@@ -127,10 +129,84 @@ function stats(){
   });
   return out;
 }
+
+/* ===== پرداخت ===== */
+let pf='',pt='',prices={tc:0,tp:0,pc:0,pp:0},prDraft={},mgr=false,grp=[],detailWho=null;
+const PN={tc:'تنیس — مربی',tp:'تنیس — بازیکن (سانس آزاد)',pc:'پدل — مربی',pp:'پدل — بازیکن (سانس آزاد)'};
+const toEn=x=>String(x).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[٬,\s]/g,'');
+const money=n=>fa(Math.round(n))+' تومان';
+const kindOf=b=>isT(b.who)?'t':(coaches.some(c=>c.name===b.who)?'c':'p');
+function priceOf(b){const k=kindOf(b);if(k==='t')return 0;if(b.paid&&b.amt!=null)return +b.amt;return +prices[(b.court<2?'t':'p')+k]||0}
+function mgrOk(){if(mgr||!MANAGER_CODE)return true;const c=prompt('کد مدیر را وارد کنید:');if(c===MANAGER_CODE){mgr=true;return true}if(c!==null)alert('کد اشتباه است');return false}
+const jd=k=>+D(k).toLocaleDateString('en-u-ca-persian',{day:'numeric'});
+function jMonth(k){const f=addD(k,-(jd(k)-1));let t=f;for(let i=0;i<31;i++){const n=addD(t,1);if(jd(n)===1)break;t=n}return[f,t]}
+async function setPaid(ids,flag){
+  if(!editor)return;
+  try{for(const id of ids){const b=bookings[id];if(!b)continue;const nb={...b};
+    if(flag){nb.amt=priceOf({...b,paid:false});nb.paid=true;nb.paidAt=Date.now()}else{delete nb.paid;delete nb.amt;delete nb.paidAt}
+    await db.collection('bookings').doc(id).set(nb)}}catch(e){alert('خطا در ذخیره')}
+}
+function groupsOf(items){
+  items=[...items].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.court-b.court||a.hour-b.hour);
+  const out=[];
+  for(const b of items){const id=b.court+'_'+b.date+'_'+b.hour,p=out[out.length-1];
+    if(p&&p.date===b.date&&p.court===b.court&&p.end+1===b.hour&&p.paid===!!b.paid){p.end=b.hour;p.ids.push(id);p.amt+=priceOf(b)}
+    else out.push({date:b.date,court:b.court,start:b.hour,end:b.hour,paid:!!b.paid,ids:[id],amt:priceOf(b)})}
+  return out;
+}
+function payRange(){
+  if(!pf||!pt){[pf,pt]=jMonth(key(new Date()))}
+  if(pt<pf)pt=pf;
+  const nd=Math.round((D(pt)-D(pf))/864e5)+1,set=new Set(nd<=800?[...Array(nd)].map((_,i)=>addD(pf,i)):[]);
+  const by={};
+  for(const b of Object.values(bookings)){if(!set.has(b.date)||isT(b.who))continue;
+    const r=by[b.who]||(by[b.who]={who:b.who,kind:kindOf(b),items:[],h:0,uh:0,due:0,paid:0});
+    r.items.push(b);r.h++;if(b.paid)r.paid+=priceOf(b);else{r.uh++;r.due+=priceOf(b)}}
+  return{nd,rows:Object.values(by).sort((a,b)=>b.due-a.due||b.h-a.h)};
+}
+function pay(){
+  const {nd,rows}=payRange(),fl=k=>fd(k,{day:'numeric',month:'long',year:'numeric'});
+  const tD=rows.reduce((s,r)=>s+r.due,0),tP=rows.reduce((s,r)=>s+r.paid,0);
+  const [m0,m1]=jMonth(key(new Date())),pm=jMonth(addD(m0,-1));
+  let o=`<div class="card"><b>قیمت هر ساعت (تومان)</b> <span class="mu">(با کد مدیر ذخیره می‌شود)</span>`+
+   Object.keys(PN).map(k=>`<label class="mu" style="display:block;margin-top:6px">${PN[k]}</label><input type="text" inputmode="numeric" id="pr_${k}" value="${esc(prDraft[k]!==undefined?prDraft[k]:(prices[k]||''))}" placeholder="مثلاً ۵۰۰٬۰۰۰">`).join('')+
+   `<button class="pri" id="prsave">ذخیره‌ی قیمت‌ها</button><div class="mu" style="margin-top:4px">قیمت سانس‌های پرداخت‌شده در لحظه‌ی پرداخت ثبت می‌شود و با تغییر قیمت عوض نمی‌شود.</div></div>
+  <div class="card"><b>بازه‌ی پرداخت</b><label class="mu" style="display:block;margin-top:6px">از تاریخ</label><select id="pf">${sOpts(pf)}</select><label class="mu">تا تاریخ</label><select id="pt">${sOpts(pt)}</select>
+  <div class="chips"><button data-pp="0">این ماه</button><button data-pp="1">ماه قبل</button><button data-pp="2">۳۰ روز اخیر</button></div>
+  <div class="mu" style="margin-top:4px">${fl(pf)} تا ${fl(pt)} · ${fa(nd)} روز</div>
+  <div class="row"><span>پرداخت‌نشده</span><b style="color:#b91c1c">${money(tD)}</b></div><div class="row"><span>پرداخت‌شده</span><b>${money(tP)}</b></div></div>`;
+  if(!rows.length)return o+'<div class="card mu">در این بازه رزروی نیست.</div>';
+  rows.forEach(r=>{o+=`<div class="card"><div class="row"><span><span class="dot" style="background:${color(r.who)}"></span><b data-pw="${esc(r.who)}" style="text-decoration:underline;cursor:pointer">${esc(r.who)}</b> <span class="mu">${r.kind==='c'?'مربی':'سانس آزاد'}</span></span><span class="mu">${fa(r.h)} ساعت</span></div>
+   <div class="row"><span>پرداخت‌نشده: ${fa(r.uh)} ساعت</span><b style="color:${r.due?'#b91c1c':'inherit'}">${money(r.due)}</b></div>
+   <div class="row"><span class="mu">پرداخت‌شده: ${fa(r.h-r.uh)} ساعت</span><span class="mu">${money(r.paid)}</span></div>
+   <div class="row"><button data-pw="${esc(r.who)}">جزئیات سانس‌ها</button>${r.uh?`<button class="pri" style="width:auto;margin:0" data-settle="${esc(r.who)}">تسویه‌ی همه</button>`:'<span class="mu">✓ تسویه</span>'}</div></div>`});
+  return o;
+}
+function openPerson(who){
+  detailWho=who;
+  const {rows}=payRange(),r=rows.find(x=>x.who===who);
+  if(!r){close();return}
+  grp=groupsOf(r.items);
+  const fl=k=>fd(k,{weekday:'short',day:'numeric',month:'long'});
+  let m=`<div class="sheet" id="sh"><div><b>${esc(who)}</b> <span class="mu">${r.kind==='c'?'مربی':'سانس آزاد'}</span><div class="mu" style="margin:6px 0">${fa(r.uh)} ساعت پرداخت‌نشده · ${money(r.due)}</div>`;
+  grp.forEach((g,i)=>{m+=`<div class="row" style="border-top:1px solid var(--bd);padding-top:6px"><span>${fl(g.date)}<br><span class="mu">${COURTS[g.court]} · ${fa(g.start)} تا ${fa(g.end+1)} · ${money(g.amt)}</span></span><button data-gi="${i}" class="${g.paid?'':'pri'}" style="${g.paid?'':'width:auto;margin:0'}">${g.paid?'✓ پرداخت‌شده (لغو)':'ثبت پرداخت'}</button></div>`});
+  $('modal').innerHTML=m+`<button style="width:100%;margin-top:10px" id="pclose">بستن</button></div></div>`;
+  $('sh').onclick=e=>{if(e.target.id==='sh')close()};$('pclose').onclick=close;
+  document.querySelectorAll('[data-gi]').forEach(b=>b.onclick=async()=>{const g=grp[+b.dataset.gi];if(!mgrOk())return;await setPaid(g.ids,!g.paid);openPerson(detailWho)});
+}
+async function settle(who){
+  const {rows}=payRange(),r=rows.find(x=>x.who===who);if(!r)return;
+  const ids=r.items.filter(b=>!b.paid).map(b=>b.court+'_'+b.date+'_'+b.hour);
+  if(!ids.length)return;
+  if(!r.due&&!confirm('قیمت این سانس‌ها صفر است (قیمت‌ها ثبت نشده؟). باز هم پرداخت‌شده ثبت شود؟'))return;
+  if(!confirm(who+': '+fa(ids.length)+' ساعت به مبلغ '+money(r.due)+' پرداخت‌شده ثبت شود؟'))return;
+  if(!mgrOk())return;
+  await setPaid(ids,true);
+}
 function coach(){
   return `<div class="card"><b>مربی‌ها</b>`+(coaches.map(c=>`<div class="row"><span><span class="dot" style="background:${color(c.name)}"></span>${esc(c.name)}</span>${canEdit()?`<button data-del="${esc(c.id)}">حذف</button>`:''}</div>`).join('')||'<div class="mu">مربی‌ای ثبت نشده</div>')+
-  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div><div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><div class="mu" style="margin-top:8px">خروجی Excel برای بازه‌ی تاریخ:</div><label>از تاریخ</label><select id="xf">${xOpts(xf||key(ws))}</select><label>تا تاریخ</label><select id="xt">${xOpts(xt||addD(key(ws),6))}</select><button class="pri" id="excel">دریافت Excel این بازه (جدول هفتگی هر زمین)</button>
-<button class="pri" id="ex">دریافت فایل پشتیبان JSON</button><input type="file" id="im" accept=".json" style="margin-top:8px"><div class="mu" style="margin-top:10px">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
+  (canEdit()?`<input type="text" id="cn" placeholder="نام مربی جدید"><button class="pri" id="ca">افزودن مربی</button>`:'')+`</div>`+(editor?`<div class="card"><b>پشتیبان‌گیری و انتقال داده</b><div class="mu">داده‌ها روی سرور مشترک‌اند و برای همه همزمان است. از اینجا می‌توانید پشتیبان بگیرید یا بازگردانی کنید.</div><div class="mu" style="margin-top:8px">خروجی Excel برای بازه‌ی تاریخ:</div><label>از تاریخ</label><select id="xf">${xOpts(xf||key(ws))}</select><label>تا تاریخ</label><select id="xt">${xOpts(xt||addD(key(ws),6))}</select><button class="pri" id="excel">دریافت Excel این بازه (جدول هفتگی هر زمین)</button>
+<button class="pri" id="ex">دریافت فایل پشتیبان JSON</button><input type="file" id="im" accept=".json" style="margin-top:8px"></div>`:'')+`<div class="card"><div class="mu">کد باشگاه فعلی: <b>${esc(club)}</b></div><button id="cc" style="margin-top:6px;width:100%">تغییر کد باشگاه (ورود دوباره)</button></div>`;
 }
 let xf='',xt='';
 function xOpts(sel){const t=key(new Date());let o='';for(let i=-180;i<=365;i++){const k=addD(t,i);o+='<option value="'+k+'"'+(k===sel?' selected':'')+'>'+fd(k,{weekday:'short',day:'numeric',month:'long',year:'numeric'})+'</option>'}return o}
@@ -145,12 +221,25 @@ function bind(){
   if($('sf'))$('sf').onchange=e=>{sf=e.target.value;if(st<sf)st=sf;render()};if($('st'))$('st').onchange=e=>{st=e.target.value;if(st<sf)sf=st;render()};
   document.querySelectorAll('[data-sp]').forEach(b=>b.onclick=()=>{const k=key(ws),P=[[k,addD(k,6)],[addD(k,-21),addD(k,6)],[addD(k,-77),addD(k,6)]][+b.dataset.sp];sf=P[0];st=P[1];render()});
   document.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{const i=+b.dataset.tf;tf=tf.includes(i)?tf.filter(x=>x!==i):[...tf,i];const v={n:$('tn').value,d:$('td').value,a:$('t1').value,b:$('t2').value};render();$('tn').value=v.n;$('td').value=v.d;$('t1').value=v.a;$('t2').value=v.b});
-  if($('ca'))$('ca').onclick=async()=>{const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
+
+  if($('prsave'))$('prsave').onclick=async()=>{
+    if(!mgrOk())return;const np={};
+    for(const k of Object.keys(PN)){const v=toEn($('pr_'+k).value||'0');if(!/^\d*$/.test(v)){alert('قیمت باید عدد باشد');return}np[k]=+v||0}
+    try{await W('settings','prices',np);prDraft={};alert('قیمت‌ها ذخیره شد')}catch(e){alert('خطا در ذخیره')}
+  };
+  Object.keys(PN).forEach(k=>{if($('pr_'+k))$('pr_'+k).oninput=e=>{prDraft[k]=e.target.value}});
+  if($('pf'))$('pf').onchange=e=>{pf=e.target.value;if(pt<pf)pt=pf;render()};
+  if($('pt'))$('pt').onchange=e=>{pt=e.target.value;if(pt<pf)pf=pt;render()};
+  document.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>{const t=key(new Date()),i=+b.dataset.pp;if(i===0)[pf,pt]=jMonth(t);else if(i===1)[pf,pt]=jMonth(addD(jMonth(t)[0],-1));else{pf=addD(t,-29);pt=t}render()});
+  document.querySelectorAll('[data-pw]').forEach(b=>b.onclick=()=>openPerson(b.dataset.pw));
+  document.querySelectorAll('[data-settle]').forEach(b=>b.onclick=()=>settle(b.dataset.settle));
+  if($('ca'))$('ca').onclick=async()=>{if(!editor)return;const n=$('cn').value.trim();if(n)try{await W('coaches','c'+Date.now(),{name:n})}catch(e){alert('خطا')}};
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(editor&&confirm('حذف شود؟'))try{await db.collection('coaches').doc(b.dataset.del).delete()}catch(e){alert('خطا')}});
   if($('tadd'))$('tadd').onclick=addTour;if($('ex'))$('ex').onclick=exportData;if($('excel'))$('excel').onclick=exportExcel;if($('xf'))$('xf').onchange=e=>{xf=e.target.value;if(!xt||xt<xf){xt=xf;$('xt').value=xt}};if($('xt'))$('xt').onchange=e=>xt=e.target.value;if($('cc'))$('cc').onclick=()=>{if(confirm('کد پاک شود و دوباره کد پرسیده شود؟')){localStorage.removeItem('club');location.reload()}};if($('im'))$('im').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>delTour(b.dataset.tdel));
 }
 async function addTour(){
+  if(!editor)return;
   const name=$('tn').value.trim(),date=$('td').value,from=+$('t1').value,to=+$('t2').value;
   if(!name||!tf.length||to<from){alert('نام، زمین و ساعت را درست وارد کنید');return}
   const id='t'+Date.now();let skip=0;
@@ -160,9 +249,18 @@ async function addTour(){
   if(skip)alert(fa(skip)+' ساعت قبلاً رزرو بود و رد شد');
 }
 async function delTour(id){
+  if(!editor)return;
   if(!confirm('مسابقه و رزروهایش حذف شود؟'))return;
   try{for(const b of Object.entries(bookings))if(b[1].tid===id)await db.collection('bookings').doc(b[0]).delete();await db.collection('tours').doc(id).delete()}catch(e){alert('خطا')}
 }
+const EDIT_CODE='7392';              // رمز مسئول: فقط با این رمز می‌شود رزرو و کنسل و ویرایش کرد
+let editor=false;try{editor=localStorage.getItem('editok')===EDIT_CODE}catch(e){}
+function login(){
+  const c=prompt('رمز مسئول را وارد کنید:');
+  if(c===null)return;
+  if(c.trim()===EDIT_CODE){editor=true;try{localStorage.setItem('editok',EDIT_CODE)}catch(e){}render()}else alert('رمز اشتباه است');
+}
+function logout(){editor=false;mgr=false;if(view==='pay')view='day';try{localStorage.removeItem('editok')}catch(e){}close();render()}
 const MIN_CANCEL_HOURS=12;           // حداقل فاصله تا شروع سانس برای کنسل
 const MANAGER_CODE='5470';               // اختیاری: اگر کدی بگذارید، مدیر با این کد می‌تواند دیرتر هم کنسل کند
 const startMs=b=>new Date(b.date+'T'+pad(b.hour)+':00:00').getTime();
@@ -173,14 +271,20 @@ function mayCancel(b){
   return false;
 }
 async function cancel(list){
+  if(!editor)return;
   try{for(const [id,b] of list){await W('cancels','x'+Date.now()+Math.random().toString(36).slice(2,6),{court:b.court,date:b.date,hour:b.hour,who:b.who,at:Date.now()});await db.collection('bookings').doc(id).delete()}}catch(e){alert('خطا')}
 }
 function close(){$('modal').innerHTML=''}
 function openCell(c,k,h){
   const b=bk(c,k,h),id=c+'_'+k+'_'+h;
+  if(!editor){
+    $('modal').innerHTML=`<div class="sheet" id="sh"><div><b>${COURTS[c]} · ${fd(k,{weekday:'long',day:'numeric',month:'long'})} · ساعت ${fa(h)}</b><br><br>`+(b?`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>`:`<div class="row"><span>وضعیت</span><b>خالی</b></div>`)+`<div class="mu" style="margin:8px 0">فقط مسئول می‌تواند رزرو یا کنسل کند.</div><button class="pri" id="lg">ورود مسئول</button></div></div>`;
+    $('sh').onclick=e=>{if(e.target.id==='sh')close()};$('lg').onclick=()=>{close();login()};
+    return;
+  }
   let m=`<div class="sheet" id="sh"><div><b>${COURTS[c]} · ${fd(k,{weekday:'long',day:'numeric',month:'long'})} · ساعت ${fa(h)}</b><br><br>`;
   if(b){
-    m+=`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>${b.rid?'<div class="mu">رزرو هفتگی تکرارشونده</div>':''}${isLocked(b)?`<div class="mu" style="color:#b91c1c;margin:6px 0">کمتر از ${fa(MIN_CANCEL_HOURS)} ساعت به شروع این سانس مانده و کنسل آزاد نیست.</div>`:''}<button class="red" id="rm">کنسل این ساعت</button>${b.rid?'<button class="red" id="rma">کنسل این و همه تکرارهای بعدی</button>':''}`;
+    m+=`<div class="row"><span>رزرو شده توسط</span><b>${esc(b.who)}</b></div>${kindOf(b)==='t'?'':`<div class="row"><span>قیمت: ${money(priceOf(b))}</span><b style="color:${b.paid?'inherit':'#b91c1c'}">${b.paid?'✓ پرداخت‌شده':'پرداخت‌نشده'}</b></div><button class="${b.paid?'':'pri'}" id="pay1" style="width:100%;margin:4px 0">${b.paid?'لغو ثبت پرداخت':'ثبت پرداخت این ساعت'}</button>`}${b.rid?'<div class="mu">رزرو هفتگی تکرارشونده</div>':''}${isLocked(b)?`<div class="mu" style="color:#b91c1c;margin:6px 0">کمتر از ${fa(MIN_CANCEL_HOURS)} ساعت به شروع این سانس مانده و کنسل آزاد نیست.</div>`:''}<button class="red" id="rm">کنسل این ساعت</button>${b.rid?'<button class="red" id="rma">کنسل این و همه تکرارهای بعدی</button>':''}`;
   }else{
     m+=`<label>مربی / رزروکننده</label><select id="who">${coaches.map(x=>`<option>${esc(x.name)}</option>`).join('')}<option value="__g">سانس آزاد (مهمان)…</option></select>
     <input type="text" id="gn" placeholder="نام مهمان" style="display:none"><label>مدت</label><select id="du">${[1,2,3,4,5,6,8].map(n=>`<option value="${n}">${fa(n)} ساعت</option>`).join('')}</select>
@@ -189,17 +293,21 @@ function openCell(c,k,h){
   $('modal').innerHTML=m+`</div></div>`;
   $('sh').onclick=e=>{if(e.target.id==='sh')close()};
   if(b){
-    $('rm').onclick=async()=>{if(!mayCancel(b)){alert('کنسل کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت مانده به شروع سانس ممکن نیست.');return}await cancel([[id,b]]);close()};
+    if($('pay1'))$('pay1').onclick=async()=>{if(!mgrOk())return;await setPaid([id],!b.paid);close()};
+    $('rm').onclick=async()=>{if(!mayCancel(b)){alert('کنسل کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت مانده به شروع سانس ممکن نیست.');return}if(b.paid&&!confirm('این سانس پرداخت شده است. کنسل شود؟ (برگشت وجه با خودتان)'))return;await cancel([[id,b]]);close()};
     if(b.rid)$('rma').onclick=async()=>{
       const all=Object.entries(bookings).filter(([i,x])=>x.rid===b.rid&&x.court===c&&x.hour===h&&x.date>=k);
       const ok=all.filter(([i,x])=>!isLocked(x)),late=all.length-ok.length;
       let list=ok;
       if(late){if(MANAGER_CODE&&prompt('بعضی از این رزروها کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت مانده‌اند. برای کنسل همه کد مدیر را وارد کنید (لغو = فقط بقیه):')===MANAGER_CODE)list=all;else alert(fa(late)+' رزرو که کمتر از '+fa(MIN_CANCEL_HOURS)+' ساعت به شروعشان مانده کنسل نشد.')}
+      const pd=list.filter(([i,x])=>x.paid).length;
+      if(pd&&!confirm(fa(pd)+' ساعت از این‌ها پرداخت شده است. باز هم کنسل شوند؟ (برگشت وجه با خودتان)'))return;
       if(list.length)await cancel(list);close();
     };
   }else{
     $('who').onchange=()=>{$('gn').style.display=$('who').value==='__g'?'block':'none'};
     $('ok').onclick=async()=>{
+      if(!editor)return;
       let w=$('who').value;if(w==='__g')w=$('gn').value.trim()||'مهمان';if(!w)return;
       const n=+$('du').value,r=+$('rp').value,rid=r>1?'r'+Date.now():null;let skip=0;
       try{for(let j=0;j<r;j++){const d=addD(k,7*j);for(let i=0;i<n&&h+i<24;i++){if(bk(c,d,h+i)){skip++;continue}const o={court:c,date:d,hour:h+i,who:w};if(rid)o.rid=rid;await W('bookings',c+'_'+d+'_'+(h+i),o)}}}catch(e){alert('خطا در ذخیره')}
@@ -342,13 +450,18 @@ function exportExcel(){
     items.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.court-b.court||a.hour-b.hour);
     const list=[];
     for(const b of items){
-      const p=list[list.length-1];
-      if(p&&p.date===b.date&&p.court===b.court&&p.who===b.who&&p.end+1===b.hour)p.end=b.hour;
-      else list.push({date:b.date,court:b.court,who:b.who,start:b.hour,end:b.hour});
+      const p=list[list.length-1],pr=priceOf(b);
+      if(p&&p.date===b.date&&p.court===b.court&&p.who===b.who&&p.end+1===b.hour&&p.paid===!!b.paid){p.end=b.hour;p.amt+=pr}
+      else list.push({date:b.date,court:b.court,who:b.who,start:b.hour,end:b.hour,paid:!!b.paid,amt:pr});
     }
-    const lr=[['تاریخ','روز هفته','زمین','مربی / رزروکننده','از ساعت','تا ساعت','مدت (ساعت)','نوع'].map(v=>({v,s:1}))];
-    list.forEach(r=>lr.push([fl(r.date),fd(r.date,{weekday:'long'}),COURTS[r.court],r.who,pad(r.start)+':00',pad((r.end+1)%24)+':00',r.end-r.start+1,isT(r.who)?'مسابقه':'رزرو عادی'].map(v=>({v,s:5}))));
-    out.push({name:'لیست رزروها',rows:lr,merges:[],widths:[20,12,12,26,10,10,12,12],freeze:[0,1]});
+    const lr=[['تاریخ','روز هفته','زمین','مربی / رزروکننده','از ساعت','تا ساعت','مدت (ساعت)','نوع','قیمت (تومان)','وضعیت پرداخت'].map(v=>({v,s:1}))];
+    list.forEach(r=>lr.push([fl(r.date),fd(r.date,{weekday:'long'}),COURTS[r.court],r.who,pad(r.start)+':00',pad((r.end+1)%24)+':00',r.end-r.start+1,isT(r.who)?'مسابقه':'رزرو عادی',isT(r.who)?'-':r.amt,isT(r.who)?'-':(r.paid?'پرداخت‌شده':'پرداخت‌نشده')].map(v=>({v,s:5}))));
+    out.push({name:'لیست رزروها',rows:lr,merges:[],widths:[20,12,12,26,10,10,12,12,16,16],freeze:[0,1]});
+    const sm={};
+    for(const b of items){if(isT(b.who))continue;const r=sm[b.who]||(sm[b.who]={who:b.who,kind:kindOf(b)==='c'?'مربی':'سانس آزاد',h:0,tot:0,paid:0});r.h++;const pr=priceOf(b);r.tot+=pr;if(b.paid)r.paid+=pr}
+    const sr=[['نام','نوع','ساعت','جمع مبلغ (تومان)','پرداخت‌شده','مانده'].map(v=>({v,s:1}))];
+    Object.values(sm).sort((a,b)=>(b.tot-b.paid)-(a.tot-a.paid)).forEach(r=>sr.push([r.who,r.kind,r.h,r.tot,r.paid,r.tot-r.paid].map(v=>({v,s:5}))));
+    out.push({name:'پرداخت‌ها',rows:sr,merges:[],widths:[26,14,10,18,16,16],freeze:[0,1]});
     const cx=cancels.filter(x=>set.has(x.date)).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.court-b.court||a.hour-b.hour);
     const cr=[['تاریخ','روز هفته','زمین','مربی / رزروکننده','ساعت'].map(v=>({v,s:1}))];
     cx.forEach(x=>cr.push([fl(x.date),fd(x.date,{weekday:'long'}),COURTS[x.court],x.who,hl(x.hour)].map(v=>({v,s:5}))));
@@ -360,7 +473,8 @@ function exportExcel(){
   a.download='court-'+from+'_to_'+to+'.xlsx';document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 }
-function importData(f){const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
+function importData(f){
+  if(!editor)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!confirm('داده فعلی برای همه با این فایل جایگزین شود؟'))return;await req('','PUT',d)}catch(e){alert('فایل معتبر نیست یا ارسال نشد')}};r.readAsText(f)}
 window.addEventListener('DOMContentLoaded',()=>{
   if(FB.includes('PASTE_YOUR')){$('main').innerHTML='<div class="card">آدرس Firebase در ابتدای اسکریپت فایل تنظیم نشده است.</div>';return}
   while(!club){club=(prompt('کد باشگاه را وارد کنید (همه‌ی مربی‌ها باید همین کد را بزنند):')||'').trim().replace(/[.$#\[\]\/]/g,'')}
@@ -370,7 +484,8 @@ window.addEventListener('DOMContentLoaded',()=>{
   sub('bookings',d=>{bookings={};d.forEach(x=>bookings[x.id]=x.data())});
   sub('cancels',d=>cancels=d.map(x=>x.data()));
   sub('tours',d=>tours=d.map(x=>({id:x.id,...x.data()})));
-  ['coaches','bookings','cancels','tours'].forEach(listen);
+  sub('settings',d=>{const q=d.find(x=>x.id==='prices');prices={tc:0,tp:0,pc:0,pp:0,...(q?q.data():{})}});
+  ['coaches','bookings','cancels','tours','settings'].forEach(listen);
 });
 </script>
 </body>
